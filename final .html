@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat with Gemini</title>
+    <style>
+        /* General Styling */
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: row;
+    margin: 0;
+    background-color: #121212;
+    color: #eee;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 250px;
+    height: 100vh;
+    background: #1e1e1e;
+    color: white;
+    padding: 20px;
+    overflow-y: auto;
+    border-right: 2px solid #333;
+}
+.sidebar h3 {
+    margin-bottom: 10px;
+}
+.sidebar button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 5px;
+    background: #444;
+    color: white;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+}
+.sidebar button:hover {
+    background: #555;
+}
+
+/* Chat Container */
+.container {
+    flex: 1;
+    max-width: 600px;
+    margin: 20px auto;
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+#chat-box {
+    height: 300px;
+    overflow-y: auto;
+    border: 1px solid #444;
+    padding: 10px;
+    text-align: left;
+    background: #282828;
+}
+.user-message {
+    color: #4ba3ff;
+    font-weight: bold;
+}
+.ai-message {
+    color: #57d957;
+}
+
+/* Buttons & Input */
+textarea, button {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    font-size: 16px;
+}
+.stop-btn {
+    background: red;
+    color: white;
+}
+.save-btn {
+    background: orange;
+    color: white;
+}
+.delete-btn {
+    background: #ff4444;
+    color: white;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    body { flex-direction: column; }
+    .sidebar { width: 100%; height: auto; }
+}
+
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar for previous chats -->
+    <div class="sidebar">
+        <h3>Previous Chats</h3>
+        <div id="chat-list"></div>
+    </div>
+
+    <!-- Main Chat Interface -->
+    <div class="container">
+        <h2>AI Chat with Gemini</h2>
+        <div id="chat-box"></div>
+        <textarea id="question" placeholder="Type your question..." rows="3"></textarea>
+        <button onclick="askGemini()">Ask Gemini</button>
+        <button class="stop-btn" onclick="stopResponse()">Stop</button>
+        <button class="save-btn" onclick="saveChat()">Save Chat</button>
+    </div>
+
+    <script>
+        let chatHistory = [];
+let allChats = JSON.parse(localStorage.getItem("allChats")) || [];
+let currentChat = { id: Date.now(), name: `Chat ${new Date().toLocaleTimeString()}`, history: [] };
+let stopTyping = false;
+
+function updateChatBox() {
+    const chatBox = document.getElementById("chat-box");
+    chatBox.innerHTML = chatHistory.map(chat =>
+        `<p class="user-message">You: ${chat.question}</p>
+         <p class="ai-message">Gemini: <span class="ai-response">${chat.response}</span></p>`
+    ).join('');
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function askGemini() {
+    stopTyping = false;
+    const apiKey = "AIzaSyDzCA-X2BzVlJo9A7n6lI8PXKCZtCBN1Oc";  // Replace with actual API key
+    const question = document.getElementById("question").value;
+    if (!question.trim()) {
+        alert("Please enter a question.");
+        return;
+    }
+
+    chatHistory.push({ question, response: "Typing..." });
+    currentChat.history.push({ question, response: "Typing..." });
+    updateChatBox();
+    document.getElementById("question").value = "";
+
+    try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+        const requestBody = { contents: [{ parts: [{ text: question }] }] };
+
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody)
+        });
+
+        const result = await response.json();
+        const answer = result?.candidates?.[0]?.content?.parts?.[0]?.text || "No response from AI.";
+
+        chatHistory.pop();
+        currentChat.history.pop();
+        chatHistory.push({ question, response: "" });
+        currentChat.history.push({ question, response: "" });
+
+        updateChatBox();
+        typeWriter(answer, chatHistory.length - 1);
+    } catch (error) {
+        alert("Error fetching response!");
+        console.error(error);
+    }
+}
+
+function typeWriter(text, index, speed = 30) {
+    let i = 0;
+    function type() {
+        if (stopTyping) return;
+        if (i < text.length) {
+            document.getElementsByClassName("ai-response")[index].innerHTML += text.charAt(i);
+            i++;
+            setTimeout(type, speed);
+        } else {
+            chatHistory[index].response = text;
+            currentChat.history[index].response = text;
+        }
+    }
+    type();
+}
+
+function stopResponse() {
+    stopTyping = true;
+}
+
+function saveChat() {
+    let chatText = chatHistory.map(chat =>
+        `## Question:\n${chat.question}\n\n### Answer:\n\`\`\`markdown\n${chat.response}\n\`\`\``
+    ).join("\n\n");
+
+    let blob = new Blob([chatText], { type: "text/markdown" });
+    let a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${currentChat.name.replace(/ /g, "_")}.md`;
+    a.click();
+
+    allChats.push(currentChat);
+    localStorage.setItem("allChats", JSON.stringify(allChats));
+    loadPreviousChats();
+}
+
+function loadPreviousChats() {
+    const chatList = document.getElementById("chat-list");
+    chatList.innerHTML = allChats.map(chat =>
+        `<button onclick="loadChat(${chat.id})">${chat.name} ✏️</button>
+         <button class="delete-btn" onclick="deleteChat(${chat.id})">🗑️</button>`
+    ).join('');
+}
+
+function loadChat(chatId) {
+    const chat = allChats.find(c => c.id === chatId);
+    if (chat) {
+        chatHistory = chat.history;
+        updateChatBox();
+    }
+}
+
+function deleteChat(chatId) {
+    allChats = allChats.filter(chat => chat.id !== chatId);
+    localStorage.setItem("allChats", JSON.stringify(allChats));
+    loadPreviousChats();
+}
+
+window.onload = function () {
+    loadPreviousChats();
+    chatHistory = [];
+    updateChatBox();
+};
+
+    </script>
+
+</body>
+</html>
